@@ -30,7 +30,7 @@ class ChatUseCase:
     async def process_query(self, query_text: str) -> Result[RAGResponse, Exception]:
         """クエリを処理"""
         try:
-            # SimpleRAGServiceに処理を委任
+            # RAGServiceに処理を委任
             return await self._rag_service.process_query(query_text)
             
         except Exception as e:
@@ -55,63 +55,52 @@ class DocumentIngestionUseCase:
         query: str, 
         limit: int = 5
     ) -> Result[int, Exception]:
-        """文書を取り込み（WikipediaまたはWebスクレイピング）"""
+        """文書を取り込み"""
         try:
-            print(f"Starting document ingestion for query: {query} (limit: {limit})")
+            # 1. 文書ソースから文書を取得
+            print(f"Searching documents for query: {query}")
             
-            # 文書を検索（WikipediaまたはWeb）
-            documents_result = await self._document_source_service.search_documents(query, limit)
+            documents_result = await self._document_source_service.search_documents(
+                query=query,
+                limit=limit
+            )
+            
             if documents_result.is_failure():
-                print(f"Failed to search documents: {documents_result._value}")
                 return Result.failure(documents_result._value)
             
             documents = documents_result.unwrap()
+            print(f"Found {len(documents)} documents")
+            
             if not documents:
-                print(f"No documents found for query: {query}")
                 return Result.success(0)
             
-            print(f"Found {len(documents)} documents for ingestion")
+            # 2. 文書を処理（チャンクに分割）
+            all_chunks = []
+            for doc in documents:
+                print(f"Processing document: {doc.metadata.title}")
+                
+                chunks_result = await self._document_processing_service.process_document(doc)
+                if chunks_result.is_success():
+                    chunks = chunks_result.unwrap()
+                    all_chunks.extend(chunks)
+                else:
+                    print(f"Failed to process document: {chunks_result._value}")
+                    continue
             
-            # 複数文書を並列処理でチャンクに変換
-            chunks_result = await self._document_processing_service.process_documents(
-                documents, 
-                chunk_size=500, 
-                overlap=50
-            )
+            print(f"Generated {len(all_chunks)} chunks")
             
-            if chunks_result.is_failure():
-                print(f"Failed to process documents: {chunks_result._value}")
-                return Result.failure(chunks_result._value)
+            # 3. ベクターデータベースに保存
+            if all_chunks:
+                storage_result = await self._vector_search_service.store_chunks(all_chunks)
+                if storage_result.is_failure():
+                    return Result.failure(storage_result._value)
+                
+                print(f"Stored {len(all_chunks)} chunks in vector database")
             
-            all_chunks = chunks_result.unwrap()
-            
-            if not all_chunks:
-                print("No chunks generated from documents")
-                return Result.success(0)
-            
-            print(f"Generated {len(all_chunks)} chunks from {len(documents)} documents")
-            
-            # ベクターデータベースに保存
-            store_result = await self._vector_search_service.store_chunks(all_chunks)
-            if store_result.is_failure():
-                print(f"Failed to store chunks: {store_result._value}")
-                return Result.failure(store_result._value)
-            
-            print(f"Successfully stored {len(all_chunks)} chunks to vector database")
             return Result.success(len(all_chunks))
             
         except Exception as e:
-            print(f"Error in document ingestion: {e}")
             return Result.failure(e)
-    
-    # 後方互換性のために残す
-    async def ingest_from_wikipedia(
-        self, 
-        query: str, 
-        limit: int = 5
-    ) -> Result[int, Exception]:
-        """Wikipediaから文書を取り込み（後方互換性）"""
-        return await self.ingest_documents(query, limit)
 
 
 class WebScrapingConfigUseCase:
@@ -199,7 +188,7 @@ class SearchUseCase:
     ) -> Result[List[SearchResult], Exception]:
         """検索を実行"""
         try:
-            # SimpleRAGServiceに処理を委任
+            # RAGServiceに処理を委任
             return await self._rag_service.search_documents(query_text, max_results)
             
         except Exception as e:

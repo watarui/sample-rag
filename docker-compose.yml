@@ -48,7 +48,6 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=llama3.2:3b
       - EMBEDDING_MODEL=all-MiniLM-L6-v2
-      - WIKIPEDIA_LANG=ja
       - SCRAPING_MAX_DEPTH=1
       - SCRAPING_DELAY_SECONDS=1.0
       - SCRAPING_TIMEOUT_SECONDS=30

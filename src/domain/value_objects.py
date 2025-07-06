@@ -1,182 +1,154 @@
-"""値オブジェクト - 不変なドメインの値"""
+"""ドメイン値オブジェクト"""
 
 from __future__ import annotations
 
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, validator
 
 
-class DocumentId(BaseModel):
-    """文書ID"""
-    value: UUID = Field(default_factory=uuid4)
-
+class BaseValueObject(BaseModel):
+    """基底値オブジェクト"""
+    
     class Config:
         frozen = True
 
-    def __str__(self) -> str:
-        return str(self.value)
 
-
-class QueryText(BaseModel):
+class QueryText(BaseValueObject):
     """クエリテキスト"""
     value: str = Field(min_length=1, max_length=1000)
-
-    class Config:
-        frozen = True
-
-    @validator("value")
-    def validate_value(cls, v: str) -> str:
-        return v.strip()
-
+    
     def __str__(self) -> str:
         return self.value
 
 
-class DocumentContent(BaseModel):
-    """文書内容"""
-    text: str = Field(min_length=1)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-    class Config:
-        frozen = True
-
-    def __str__(self) -> str:
-        return self.text[:100] + "..." if len(self.text) > 100 else self.text
-
-
-class DocumentChunk(BaseModel):
-    """文書の断片"""
-    id: DocumentId = Field(default_factory=DocumentId)
-    content: str = Field(min_length=1)
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    source_document_id: Optional[DocumentId] = None
-    chunk_index: int = Field(ge=0)
-
-    class Config:
-        frozen = True
-
-    def __str__(self) -> str:
-        return f"Chunk({self.id}): {self.content[:50]}..."
-
-
-class SearchScore(BaseModel):
+class SearchScore(BaseValueObject):
     """検索スコア"""
     value: float = Field(ge=0.0, le=1.0)
-
-    class Config:
-        frozen = True
-
+    
     def __str__(self) -> str:
         return f"{self.value:.3f}"
 
 
-class SearchResult(BaseModel):
-    """検索結果"""
-    document_chunk: DocumentChunk
-    score: SearchScore
-    search_type: str = Field(default="vector")  # vector, hybrid, realtime
-
-    class Config:
-        frozen = True
-
-    def __str__(self) -> str:
-        return f"SearchResult(score={self.score}, type={self.search_type})"
-
-
-class Timestamp(BaseModel):
+class Timestamp(BaseValueObject):
     """タイムスタンプ"""
     value: datetime = Field(default_factory=datetime.now)
-
-    class Config:
-        frozen = True
-
+    
     def __str__(self) -> str:
         return self.value.isoformat()
 
 
-class FreshnessThreshold(BaseModel):
-    """データの鮮度閾値（秒）"""
-    value: int = Field(ge=0, default=3600)  # デフォルト1時間
-
-    class Config:
-        frozen = True
-
-    def is_fresh(self, timestamp: Timestamp) -> bool:
-        """データが新鮮かどうかを判定"""
-        now = datetime.now()
-        diff = (now - timestamp.value).total_seconds()
-        return diff <= self.value
-
-
-class WikipediaSource(BaseModel):
-    """Wikipedia情報源"""
-    title: str = Field(min_length=1)
-    url: str = Field(min_length=1)
-    language: str = Field(min_length=1)
-
-    def __str__(self) -> str:
-        return f"Wikipedia({self.title})"
-
-
-class WebSource(BaseModel):
-    """Web情報源"""
-    url: str = Field(min_length=1)
-    title: Optional[str] = None
-    domain: str = Field(min_length=1)
-    scraped_at: Optional[Timestamp] = None
-    content_type: str = Field(default="text/html")
+class FreshnessThreshold(BaseValueObject):
+    """情報の新しさの閾値"""
+    hours: int = Field(ge=1, le=24 * 7, default=24)  # 1時間〜1週間
+    
+    @property
+    def threshold_datetime(self) -> datetime:
+        return datetime.now() - timedelta(hours=self.hours)
     
     def __str__(self) -> str:
-        return f"Web({self.domain}): {self.title or self.url}"
+        return f"{self.hours}h"
 
 
-class ScrapingConfig(BaseModel):
-    """スクレイピング設定"""
-    base_urls: List[str] = Field(min_items=1)
-    allowed_domains: List[str] = Field(default_factory=list)
-    max_depth: int = Field(ge=0, le=10, default=2)
-    delay_seconds: float = Field(ge=0, le=10, default=1.0)
-    timeout_seconds: int = Field(ge=1, le=60, default=30)
-    max_pages: int = Field(ge=1, le=1000, default=100)
+class DocumentMetadata(BaseValueObject):
+    """文書メタデータ"""
+    title: str = Field(min_length=1, max_length=500)
+    url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    language: str = Field(default="ja")
+    content_type: str = Field(default="text/html")
+    keywords: List[str] = Field(default_factory=list)
+    
+    def __str__(self) -> str:
+        return f"Metadata({self.title})"
+
+
+class DocumentContent(BaseValueObject):
+    """文書コンテンツ"""
+    text: str = Field(min_length=1)
+    format: str = Field(default="plain")  # plain, html, markdown
+    encoding: str = Field(default="utf-8")
+    
+    @property
+    def word_count(self) -> int:
+        return len(self.text.split())
+    
+    @property
+    def char_count(self) -> int:
+        return len(self.text)
+    
+    def __str__(self) -> str:
+        preview = self.text[:50] + "..." if len(self.text) > 50 else self.text
+        return f"Content({preview})"
+
+
+class WebSource(BaseValueObject):
+    """Web情報源"""
+    url: str = Field(min_length=1)
+    domain: Optional[str] = None
+    scraped_at: datetime = Field(default_factory=datetime.now)
+    
+    def __str__(self) -> str:
+        return f"Web({self.url})"
+
+
+class DocumentChunk(BaseValueObject):
+    """文書チャンク"""
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    content: str = Field(min_length=1)
+    embedding: Optional[List[float]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_document_id: Optional[str] = None
+    chunk_index: int = Field(ge=0, default=0)
+    
+    @property
+    def size(self) -> int:
+        return len(self.content)
+    
+    def __str__(self) -> str:
+        preview = self.content[:30] + "..." if len(self.content) > 30 else self.content
+        return f"Chunk({preview})"
+
+
+class SearchResult(BaseValueObject):
+    """検索結果"""
+    content: str = Field(min_length=1)
+    score: SearchScore
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source_id: Optional[str] = None
+    
+    def __str__(self) -> str:
+        preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
+        return f"Result({self.score}, {preview})"
+
+
+class ScrapingConfig(BaseValueObject):
+    """Webスクレイピング設定"""
+    urls: List[str] = Field(min_items=1)
+    max_depth: int = Field(ge=1, le=5, default=1)
+    delay_seconds: float = Field(ge=0.1, le=10.0, default=1.0)
+    timeout_seconds: int = Field(ge=5, le=120, default=30)
+    max_pages: int = Field(ge=1, le=100, default=10)
     respect_robots_txt: bool = Field(default=True)
     user_agent: str = Field(default="RAG-Bot/1.0")
     
-    # CSS セレクター設定
-    content_selectors: List[str] = Field(default_factory=lambda: [
-        "main", "article", ".content", "#content", ".main-content"
-    ])
-    exclude_selectors: List[str] = Field(default_factory=lambda: [
-        "nav", "footer", "header", ".navigation", ".sidebar", ".ads"
-    ])
-    title_selectors: List[str] = Field(default_factory=lambda: [
-        "h1", "title", ".page-title", ".title"
-    ])
+    def __str__(self) -> str:
+        return f"ScrapingConfig({len(self.urls)} URLs)"
 
 
-class WebPageContent(BaseModel):
+class WebPageContent(BaseValueObject):
     """Webページコンテンツ"""
-    url: str = Field(min_length=1)
-    title: str = Field(default="")
-    text_content: str = Field(default="")
-    html_content: str = Field(default="")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    links: List[str] = Field(default_factory=list)
-    scraped_at: Timestamp = Field(default_factory=Timestamp)
+    url: str
+    title: str
+    content: str
+    scraped_at: datetime = Field(default_factory=datetime.now)
+    content_type: str = Field(default="text/html")
     
-    def get_clean_text(self) -> str:
-        """クリーンなテキストを取得"""
-        import re
-        
-        text = self.text_content
-        # 余分な空白を削除
-        text = re.sub(r'\s+', ' ', text)
-        text = text.strip()
-        
-        return text
+    def __str__(self) -> str:
+        return f"WebPage({self.title})"
 
 
 class RAGQuery(BaseModel):

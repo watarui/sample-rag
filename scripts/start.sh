@@ -12,7 +12,6 @@ export QDRANT_PORT=${QDRANT_PORT:-"6333"}
 export OLLAMA_HOST=${OLLAMA_HOST:-"http://localhost:11434"}
 export OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.2:3b"}
 export EMBEDDING_MODEL=${EMBEDDING_MODEL:-"all-MiniLM-L6-v2"}
-export WIKIPEDIA_LANG=${WIKIPEDIA_LANG:-"ja"}
 
 # Dockerコンテナの起動
 echo "🐳 Dockerコンテナを起動中..."

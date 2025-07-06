@@ -83,14 +83,14 @@ class WebScrapingService(Protocol):
 
 
 class DocumentSourceService(Protocol):
-    """文書ソースサービス（抽象インターフェース）"""
+    """文書ソースサービス（インターフェース）"""
     
     async def search_documents(
         self, 
         query: str, 
         limit: int = 3
     ) -> Result[List[Document], Exception]:
-        """文書を検索（WikipediaまたはWebスクレイピング）"""
+        """文書を検索（Webスクレイピングまたは他のソース）"""
         ...
 
 

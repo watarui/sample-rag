@@ -6,6 +6,6 @@ from .document_source_adapter import DocumentSourceAdapter
 from .embedding_service import SentenceTransformerEmbeddingService
 from .ollama_service import OllamaLLMService
 from .qdrant_client import QdrantVectorSearchService
-from .simple_rag_service import SimpleRAGService
+from .rag_service import RAGService
 from .web_scraping_service import WebScrapingServiceImpl
  
