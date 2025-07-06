@@ -1,0 +1,82 @@
+services:
+  # Qdrant ベクターデータベース
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Ollama ローカルLLMサービス (M3 Mac対応)
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    # M3 Macでは GPU設定を削除（Apple Silicon GPU は自動的に使用される）
+
+  # RAG API サーバー
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+      - redis
+      - ollama
+    environment:
+      - DOCUMENT_SOURCE=web
+      - PORTAL_URLS=https://weather.yahoo.co.jp/weather/jp/13/4410.html
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION=documents
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2:3b
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - WIKIPEDIA_LANG=ja
+      - SCRAPING_MAX_DEPTH=1
+      - SCRAPING_DELAY_SECONDS=1.0
+      - SCRAPING_TIMEOUT_SECONDS=30
+      - SCRAPING_MAX_PAGES=5
+      - SCRAPING_RESPECT_ROBOTS_TXT=true
+      - SCRAPING_USER_AGENT=RAG-Bot/1.0
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_LOG_LEVEL=info
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis (オプション: キャッシュ用)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  ollama_data:
+  redis_data: 
